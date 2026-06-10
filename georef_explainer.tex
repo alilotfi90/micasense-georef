@@ -1,0 +1,89 @@
+\documentclass[10pt]{article}
+\usepackage[a4paper,margin=0.82in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[colorlinks=true,urlcolor=blue]{hyperref}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\renewcommand{\arraystretch}{1.1}
+\newcommand{\R}{\mathbf{R}}
+\newcommand{\vd}{\mathbf{d}}
+\newcommand{\vC}{\mathbf{C}}
+
+\begin{document}
+\begin{center}
+{\large\bfseries Single--image georeferencing of a MicaSense frame over flat ground}\\[2pt]
+{\small Mapping image pixels to ground coordinates $(E,N)$ from one capture --- no second image, no panel, no GCP}\\[3pt]
+{\small\itshape Developed by Ali Lotfi, in collaboration with Claude Opus 4.8}
+\end{center}
+\vspace{-4pt}
+
+\section*{1.\quad The idea}
+An orthomosaic carries a 6--parameter \emph{affine} geotransform because orthorectification has already resampled the imagery onto a planar map grid, so pixel\,$\to$\,ground is linear. A \emph{raw} frame is a central (perspective) projection of the 3--D scene: a pixel defines a \emph{ray}, not a point, and a ground coordinate is obtained only by intersecting that ray with a surface. For an agricultural field the surface is well approximated by a plane, and then the pixel\,$\leftrightarrow$\,ground map of one frame is an \emph{exact} $3\times3$ projective homography (8 parameters) --- the projective generalisation of the ortho's affine. A tilt away from nadir contributes the off--diagonal (keystone) terms that an affine cannot represent.
+
+\section*{2.\quad Camera model from the image metadata}
+Every parameter below is read directly from the file's XMP/EXIF.
+
+\noindent\textbf{Intrinsics (pixels).} With $\rho=$ \texttt{FocalPlaneXResolution} (px\,mm$^{-1}$), focal length $f=f_{\mathrm{mm}}\rho$ and principal point $(c_x,c_y)=(\mathrm{pp}_x\rho,\,\mathrm{pp}_y\rho)$, giving
+\[
+\mathbf{K}=\begin{bmatrix} f & 0 & c_x\\ 0 & f & c_y\\ 0 & 0 & 1 \end{bmatrix}.
+\]
+We use the OpenCV camera frame: $x$ right, $y$ down, $z$ along the optical axis (downward at nadir).
+
+\noindent\textbf{Lens distortion.} Brown model, radial $k_1,k_2,k_3$ and tangential $p_1,p_2$ (\texttt{Camera:PerspectiveDistortion}, in that order).
+
+\noindent\textbf{Exterior orientation.} The projection centre is $\vC=(E_0,N_0,h)^{\!\top}$, where $(E_0,N_0)$ is the GPS longitude/latitude projected into the local UTM zone and $h$ the GPS altitude (orthometric). The orientation is the rotation $\R$ that takes camera axes into the world East--North--Up (ENU) frame, built from the EXIF Yaw/Pitch/Roll $(\psi,\theta,\varphi)$:
+\[
+\R \;=\; \mathbf{C}_{en}\,\mathbf{C}_{nb}(\psi,\theta,\varphi)\,\mathbf{R}_{cb},
+\qquad
+\mathbf{R}_{cb}=\!\begin{bmatrix}0&-1&0\\1&0&0\\0&0&1\end{bmatrix}\!,\quad
+\mathbf{C}_{en}=\!\begin{bmatrix}0&1&0\\1&0&0\\0&0&-1\end{bmatrix}\!.
+\]
+Here $\mathbf{R}_{cb}$ is the fixed look--down camera$\to$body map, $\mathbf{C}_{en}$ swaps the navigation NED frame to ENU, and $\mathbf{C}_{nb}=\mathbf{R}_z(\psi)\mathbf{R}_y(\theta)\mathbf{R}_x(\varphi)$ is the body$\to$NED rotation (B\"aumker convention, $\psi$ yaw, $\theta$ pitch, $\varphi$ roll).
+
+\section*{3.\quad From a pixel to ground coordinates $(E,N)$}
+For a pixel $(u,v)$:
+
+\textbf{(i) Normalise:} $\;x_d=(u-c_x)/f,\quad y_d=(v-c_y)/f.$
+
+\textbf{(ii) Undistort} --- recover the ideal $(x,y)$ by inverting the Brown model, with $r^2=x^2+y^2$,
+\[
+x_d = x\bigl(1+k_1r^2+k_2r^4+k_3r^6\bigr)+2p_1xy+p_2(r^2+2x^2),
+\]
+\[
+y_d = y\bigl(1+k_1r^2+k_2r^4+k_3r^6\bigr)+p_1(r^2+2y^2)+2p_2xy,
+\]
+solved by a few fixed--point iterations (MicaSense distortion is sub--pixel except at the edges).
+
+\textbf{(iii) Form the world ray:} the camera--frame direction $\vd_c=(x,y,1)^{\!\top}$ rotates to $\vd=\R\,\vd_c$.
+
+\textbf{(iv) Intersect the ground plane} $Z=Z_g$ (with $Z_g$ the field elevation). The ray is $\mathbf{P}(t)=\vC+t\,\vd$; the plane fixes the scale,
+\[
+\boxed{\;t^{\*}=\dfrac{Z_g-C_z}{d_z},\qquad
+\begin{bmatrix}E\\N\end{bmatrix}=
+\begin{bmatrix}C_x\\C_y\end{bmatrix}+t^{\*}\begin{bmatrix}d_x\\d_y\end{bmatrix}.\;}
+\]
+That pair $(E,N)$ is the ground coordinate of the pixel, in UTM.
+
+\textbf{Equivalent closed form (the matrix).} For a plane the entire map is a single homography. Place the local ground origin at the nadir point (plane $Z=0$, camera at $(0,0,H_{\!A})$ with $H_{\!A}=h-Z_g$). Then
+\[
+s\,(u,v,1)^{\!\top}=\mathbf{K}\,[\,\mathbf{r}_1\ \ \mathbf{r}_2\ \ \mathbf{t}\,]\,(E,N,1)^{\!\top},
+\qquad \mathbf{t}=-H_{\!A}\,\mathbf{r}_3,
+\]
+where $\mathbf{r}_1,\mathbf{r}_2,\mathbf{r}_3$ are the columns of $\R^{\!\top}$ (world$\to$camera). Inverting the $3\times3$ matrix gives $(E,N)$ directly from $(u,v)$; absolute coordinates are this plus $(E_0,N_0)$. The relation is exact for a plane and applies to \emph{undistorted} pixels (do step ii first).
+
+\section*{4.\quad What to expect}
+Because the model is geometrically exact for a planar surface, pixel\,$\leftrightarrow$\,ground round--trips to numerical zero. Two practical limits remain. \textbf{(a) Absolute position} inherits the onboard GNSS uncertainty --- roughly $1$--$2$\,m for a standard fix (the EXIF \texttt{GPSXYAccuracy}/\texttt{GPSZAccuracy} report it), removable only with RTK/PPK or a ground control point. \textbf{(b) Canopy parallax:} at low flight height a differential crop canopy behaves like relief and shifts edge pixels by about $(h_{\mathrm{canopy}}/H_{\!A})\times(\text{edge distance})$ --- decimetre--scale for a $1$\,m canopy at $22$\,m AGL, vanishing toward nadir. A \emph{uniform} field slope is harmless, since a homography handles any tilted plane.
+
+\section*{5.\quad Running it}
+Dependencies: \texttt{numpy}, \texttt{pyproj}, \texttt{Pillow}, \texttt{tifffile} (and \texttt{rasterio} only for GeoTIFF output).
+
+\noindent Print the homography and self--checks:
+\begin{quote}\small\verb|python micasense_georef.py IMG_0010_4.tif --ground-elev 481.5|\end{quote}
+
+\noindent Write a north--up GeoTIFF (UTM zone auto--selected from the GPS):
+\begin{quote}\small\verb|python micasense_georef.py IMG_0010_4.tif --ground-elev 481.5 --gsd 0.012 --out out.tif|\end{quote}
+
+\noindent\verb|--ground-elev| is the field elevation in metres (from a DEM; it sets the footprint's scale and position), and \verb|--gsd| the output pixel size in metres. Run the script per band \emph{after} band--to--band alignment to build a georeferenced multispectral stack.
+\end{document}
