@@ -25,7 +25,8 @@ that homography, and can warp the band to a north-up GeoTIFF.
 ## Install
 
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate micasense-georef
 ```
 
 `rasterio` is only required if you write a GeoTIFF (`--out`). The math/homography path
