@@ -33,7 +33,7 @@ We use the OpenCV camera frame: $x$ right, $y$ down, $z$ along the optical axis 
 
 \noindent\textbf{Lens distortion.} Brown model, radial $k_1,k_2,k_3$ and tangential $p_1,p_2$ (\texttt{Camera:PerspectiveDistortion}, in that order).
 
-\noindent\textbf{Exterior orientation.} The projection centre is $\vC=(E_0,N_0,h)^{\!\top}$, where $(E_0,N_0)$ is the GPS longitude/latitude projected into the local UTM zone and $h$ the GPS altitude (orthometric). The orientation is the rotation $\R$ that takes camera axes into the world East--North--Up (ENU) frame, built from the EXIF Yaw/Pitch/Roll $(\psi,\theta,\varphi)$:
+\noindent\textbf{Exterior orientation.} The projection centre is $\vC=(E_0,N_0,h)^{\!\top}$, where $(E_0,N_0)$ is the GPS longitude/latitude projected into the local UTM zone and $h$ the GPS altitude. Note: MicaSense records \texttt{GPSAltitude} as height above the WGS84 \emph{ellipsoid}; this is automatically converted to orthometric (MSL) height via the EGM96 geoid grid so that it is comparable with DEM ground elevations. The orientation is the rotation $\R$ that takes camera axes into the world East--North--Up (ENU) frame, built from the EXIF Yaw/Pitch/Roll $(\psi,\theta,\varphi)$:
 \[
 \R \;=\; \mathbf{C}_{en}\,\mathbf{C}_{nb}(\psi,\theta,\varphi)\,\mathbf{R}_{cb},
 \qquad
@@ -74,7 +74,7 @@ s\,(u,v,1)^{\!\top}=\mathbf{K}\,[\,\mathbf{r}_1\ \ \mathbf{r}_2\ \ \mathbf{t}\,]
 where $\mathbf{r}_1,\mathbf{r}_2,\mathbf{r}_3$ are the columns of $\R^{\!\top}$ (world$\to$camera). Inverting the $3\times3$ matrix gives $(E,N)$ directly from $(u,v)$; absolute coordinates are this plus $(E_0,N_0)$. The relation is exact for a plane and applies to \emph{undistorted} pixels (do step ii first).
 
 \section*{4.\quad What to expect}
-Because the model is geometrically exact for a planar surface, pixel\,$\leftrightarrow$\,ground round--trips to numerical zero. Two practical limits remain. \textbf{(a) Absolute position} inherits the onboard GNSS uncertainty --- roughly $1$--$2$\,m for a standard fix (the EXIF \texttt{GPSXYAccuracy}/\texttt{GPSZAccuracy} report it), removable only with RTK/PPK or a ground control point. \textbf{(b) Canopy parallax:} at low flight height a differential crop canopy behaves like relief and shifts edge pixels by about $(h_{\mathrm{canopy}}/H_{\!A})\times(\text{edge distance})$ --- decimetre--scale for a $1$\,m canopy at $22$\,m AGL, vanishing toward nadir. A \emph{uniform} field slope is harmless, since a homography handles any tilted plane.
+Because the model is geometrically exact for a planar surface, pixel\,$\leftrightarrow$\,ground round--trips to numerical zero. Three practical limits remain. \textbf{(a) Vertical datum:} the GPSAltitude in the metadata is an ellipsoid height (WGS84); DEM ground elevations are orthometric (above the geoid/MSL). The script converts automatically using EGM96 so the two are in the same datum. If the geoid grid is unavailable, the fallback is to treat GPS as orthometric with a warning. For absolute-certainty workflows, give the AGL directly via \verb|--agl| to sidestep the datum question entirely. \textbf{(b) Absolute position} inherits the onboard GNSS uncertainty --- roughly $1$--$2$\,m for a standard fix (the EXIF \texttt{GPSXYAccuracy}/\texttt{GPSZAccuracy} report it), removable only with RTK/PPK or a ground control point. \textbf{(c) Canopy parallax:} at low flight height a differential crop canopy behaves like relief and shifts edge pixels by about $(h_{\mathrm{canopy}}/H_{\!A})\times(\text{edge distance})$ --- decimetre--scale for a $1$\,m canopy at $22$\,m AGL, vanishing toward nadir. A \emph{uniform} field slope is harmless, since a homography handles any tilted plane.
 
 \section*{5.\quad Running it}
 Dependencies: \texttt{numpy}, \texttt{pyproj}, \texttt{Pillow}, \texttt{tifffile} (and \texttt{rasterio} only for GeoTIFF output).
@@ -85,5 +85,8 @@ Dependencies: \texttt{numpy}, \texttt{pyproj}, \texttt{Pillow}, \texttt{tifffile
 \noindent Write a north--up GeoTIFF (UTM zone auto--selected from the GPS):
 \begin{quote}\small\verb|python micasense_georef.py IMG_0010_4.tif --ground-elev 481.5 --gsd 0.012 --out out.tif|\end{quote}
 
-\noindent\verb|--ground-elev| is the field elevation in metres (from a DEM; it sets the footprint's scale and position), and \verb|--gsd| the output pixel size in metres. Run the script per band \emph{after} band--to--band alignment to build a georeferenced multispectral stack.
+\noindent Alternatively, give the camera height above ground directly (sidesteps vertical-datum ambiguity):
+\begin{quote}\small\verb|python micasense_georef.py IMG_0010_4.tif --agl 22.0 --out out.tif|\end{quote}
+
+\noindent\verb|--ground-elev| is the field elevation in metres (orthometric/MSL from a DEM; it sets the footprint's scale and position), and \verb|--gsd| the output pixel size in metres. \verb|--agl| is an alternative that gives the absolute height above ground in metres (from the flight plan or other source); exactly one of \verb|--ground-elev| or \verb|--agl| is required. Run the script per band \emph{after} band--to--band alignment to build a georeferenced multispectral stack.
 \end{document}

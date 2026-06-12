@@ -9,3 +9,5 @@ out*.tif
 *.log
 *.out
 *.aux.*
+.bin
+.pytest_cache/
