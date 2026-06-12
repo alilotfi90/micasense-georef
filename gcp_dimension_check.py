@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import math
 
-from micasense_georef import load_model, pixel_to_ground
+from micasense_georef_v2 import load_model, pixel_to_ground
+#from micasense_georef_v2 import load_model, pixel_to_ground
 
 def verify_gcp(image_path, ground_elev):
     print("Loading camera model and image...")
@@ -16,8 +17,24 @@ def verify_gcp(image_path, ground_elev):
     # Create an interactive plot
     fig, ax = plt.subplots(figsize=(10, 10))
     ax.imshow(img_array, cmap='gray')
-    ax.set_title("Click the 4 corners of the GCP (in order around the edge).\nThen close this window.")
-    
+    ax.set_title("Click the 4 corners of the GCP (in order around the edge).\n"
+                 "Scroll to zoom in/out at the cursor. Then close this window.")
+
+    def on_scroll(event):
+        # Zoom in/out about the cursor position
+        if event.inaxes is not ax:
+            return
+        scale = 0.8 if event.button == "up" else 1.25
+        x0, x1 = ax.get_xlim()
+        y0, y1 = ax.get_ylim()
+        ax.set_xlim(event.xdata + (x0 - event.xdata) * scale,
+                    event.xdata + (x1 - event.xdata) * scale)
+        ax.set_ylim(event.ydata + (y0 - event.ydata) * scale,
+                    event.ydata + (y1 - event.ydata) * scale)
+        fig.canvas.draw_idle()
+
+    fig.canvas.mpl_connect("scroll_event", on_scroll)
+
     print("Waiting for you to click the 4 corners on the image...")
     # This pauses the script and waits for 4 mouse clicks
     clicks = plt.ginput(4, timeout=0) 
@@ -55,7 +72,12 @@ def verify_gcp(image_path, ground_elev):
         print(f"Distance from Corner {i+1} to {(i+1)%4 + 1}: {distance:.3f} meters")
 
 if __name__ == "__main__":
-    IMAGE_FILE = "/home/nzy764/raw images/kernan2025/20250630/Raw/001/IMG_0202_1.tif" 
-    GROUND_ELEVATION = 481.5      
+    IMAGE_FILE = "/home/nzy764/dev/IMG_0339_1.tif"
+    #IMAGE_FILE = "/home/nzy764/raw images/kernan2025/20250630/Raw/001/IMG_0202_1.tif"
+
+    # Orthometric (MSL) ground elevation at the GCP.  481.5 m was Saskatoon's
+    # nominal city elevation; the field at this frame's lat/lon is ~512 m MSL
+    # (SRTM says ~508 m; 512 m back-solved from the 60 cm GCP).
+    GROUND_ELEVATION = 512.0
     
     verify_gcp(IMAGE_FILE, GROUND_ELEVATION)
