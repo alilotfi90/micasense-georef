@@ -41,29 +41,34 @@ GCP dimension checker.
 
 ## Usage
 
-Print the homography and the self-checks:
+Give **exactly one** of `--ground-elev` or `--agl`. Ground distances scale linearly
+with AGL (camera height above ground), so the printed `AGL=…` line is the first thing
+to sanity-check — it should match your flight plan (typically ~10–15 m for low-altitude
+field work). An AGL of only a few metres usually means the ground elevation is too high
+for that frame, not that the camera model is wrong.
+
+**Recommended** — pass AGL from the flight plan (sidesteps vertical-datum ambiguity):
 
 ```bash
-python micasense_georef_v2.py IMG_0010_4.tif --ground-elev 481.5
+python micasense_georef_v2.py IMG_0010_4.tif --agl 12.0
 ```
 
 Write a north-up GeoTIFF:
 
 ```bash
-python micasense_georef_v2.py IMG_0010_4.tif --ground-elev 481.5 --gsd 0.012 --out out.tif
+python micasense_georef_v2.py IMG_0010_4.tif --agl 12.0 --gsd 0.012 --out out.tif
 ```
 
-Alternatively, give the camera height above ground directly (sidesteps vertical-datum
-ambiguity):
+Alternatively, give the field elevation from a DEM:
 
 ```bash
-python micasense_georef_v2.py IMG_0010_4.tif --agl 22.0 --out out.tif
+python micasense_georef_v2.py IMG_0010_4.tif --ground-elev 502.0
 ```
 
-- `--ground-elev` — field elevation in metres **orthometric/MSL** (from a DEM). Sets
-  the footprint's absolute scale and position.
-- `--agl` — camera height above ground in metres (e.g. from the flight plan). Exactly
-  one of `--ground-elev` or `--agl` is required.
+- `--agl` — camera height above ground in metres (e.g. from the flight plan). The script
+  derives `ground_elev = camera_orthometric_alt − agl`.
+- `--ground-elev` — field elevation in metres **orthometric/MSL** (from a DEM at the
+  frame's lat/lon). Sets the footprint's absolute scale and position.
 - `--gsd` — output pixel size in metres (default 0.012).
 - `--out` — output GeoTIFF path (optional).
 
@@ -72,22 +77,32 @@ The functions are also importable:
 ```python
 from micasense_georef_v2 import load_model, pixel_to_ground, flat_ground_homography
 m = load_model("IMG_0010_4.tif")
-E, N = pixel_to_ground(m, u=1032, v=772, ground_elev=481.5)   # UTM
-H_utm, H_local = flat_ground_homography(m, ground_elev=481.5)
+agl = 12.0
+ground_elev = m["alt"] - agl
+E, N = pixel_to_ground(m, u=1032, v=772, ground_elev)   # UTM
+H_utm, H_local = flat_ground_homography(m, ground_elev=ground_elev)
 ```
 
 ### Validating ground distances (GCP checker)
 
 `gcp_dimension_check.py` opens a band interactively: click the four corners of a known
 ground control panel, and the script prints the UTM coordinates and edge lengths. Use
-it to sanity-check the model against a target dimension (e.g. a 60 cm panel side).
+it to sanity-check the vertical input and camera model against a target dimension (e.g.
+a 60 cm panel side).
 
 ```bash
 python gcp_dimension_check.py
 ```
 
-Edit the `IMAGE_FILE` and `GROUND_ELEVATION` constants at the bottom of the script
-before running. Scroll the mouse wheel to zoom while picking corners.
+Edit `IMAGE_FILE` and `AGL` at the bottom of the script before running (`ground_elev`
+is derived as `model["alt"] - AGL`). Prefer AGL from the flight plan over a guessed
+ground elevation — a wrong `ground_elev` scales every edge length uniformly without
+breaking the homography self-checks. Scroll the mouse wheel to zoom while picking
+corners.
+
+**Example:** for `IMG_0505_1.tif`, `--ground-elev 512` implied `AGL=2.13 m` and
+measured ~0.10 m panel edges; `--agl 12` gave ~0.60 m edges, matching the known panel.
+The field elevation at that frame's lat/lon was ~502 m MSL, not 512 m.
 
 ## How it works
 
@@ -101,11 +116,14 @@ source is included; rebuild with:
 
 ## Notes and limitations
 
-- **Vertical datum.** MicaSense records `GPSAltitude` as height above the WGS84
-  ellipsoid; DEM ground elevations are orthometric (above the geoid/MSL). `v2` converts
-  automatically via EGM96. If the geoid grid is unavailable, the script falls back to
-  treating GPS as orthometric with a warning. For absolute certainty, pass `--agl`
-  directly.
+- **Vertical datum and ground scale.** MicaSense records `GPSAltitude` as height above
+  the WGS84 ellipsoid; DEM ground elevations are orthometric (above the geoid/MSL). `v2`
+  converts automatically via EGM96. If the geoid grid is unavailable, the script falls
+  back to treating GPS as orthometric with a warning. All ground distances scale
+  linearly with AGL (`camera_orthometric_alt − ground_elev`); a wrong ground elevation
+  shrinks or stretches the footprint uniformly while the homography self-checks still
+  pass. Prefer `--agl` from the flight plan, or a DEM elevation at the frame's
+  lat/lon — not a nominal city/region elevation from a different site.
 - **Run per band, after band alignment.** Each band has its own focal length, principal
   point, distortion, and physical position on the sensor head (`RigTranslations`, up to
   ~48 mm apart). The script uses each band's own intrinsics but places its camera at the

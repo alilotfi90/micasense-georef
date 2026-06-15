@@ -72,12 +72,15 @@ def verify_gcp(image_path, ground_elev):
         print(f"Distance from Corner {i+1} to {(i+1)%4 + 1}: {distance:.3f} meters")
 
 if __name__ == "__main__":
-    IMAGE_FILE = "/home/nzy764/dev/IMG_0339_1.tif"
+    IMAGE_FILE = "/home/nzy764/dev/more sample images/IMG_0505_1.tif"
     #IMAGE_FILE = "/home/nzy764/raw images/kernan2025/20250630/Raw/001/IMG_0202_1.tif"
 
     # Orthometric (MSL) ground elevation at the GCP.  481.5 m was Saskatoon's
     # nominal city elevation; the field at this frame's lat/lon is ~512 m MSL
     # (SRTM says ~508 m; 512 m back-solved from the 60 cm GCP).
-    GROUND_ELEVATION = 512.0
+    #GROUND_ELEVATION = 512.0
     
-    verify_gcp(IMAGE_FILE, GROUND_ELEVATION)
+    AGL = 12.0
+    model = load_model(IMAGE_FILE)
+    
+    verify_gcp(IMAGE_FILE, model["alt"] - AGL)
