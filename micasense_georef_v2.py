@@ -15,7 +15,8 @@ homography, and (optionally) warps the band to a north-up GeoTIFF.
 Everything needed is in the file:
   * intrinsics  -> Perspective Focal Length, Principal Point, FocalPlaneXResolution
   * distortion  -> Perspective Distortion  (Brown: k1,k2,k3,p1,p2)
-  * pose        -> Yaw, Pitch, Roll  +  GPS Latitude/Longitude/Altitude
+  * pose        -> Yaw (DLS/Irradiance heading), Pitch, Roll (camera)
+                   +  GPS Latitude/Longitude/Altitude
 
 The ONE external input is the ground elevation under the frame (--ground-elev),
 which sets the absolute scale and position of the footprint.  It must be an
@@ -64,6 +65,27 @@ def _seq(xmp: str, key: str):
     return [float(v) for v in re.findall(r'<rdf:li>([^<]+)</rdf:li>', m.group(1))]
 
 
+def _heading_deg(xmp: str) -> float:
+    """Camera heading (yaw), degrees, from the best available source.
+
+    MicaSense frequently leaves ``Camera:Yaw`` at 0 (no gimbal/heading feedback
+    on the camera itself) while the true platform heading is recorded as
+    ``Camera:IrradianceYaw`` (deg) / ``DLS:Yaw`` (rad) -- the magnetometer-backed
+    DLS heading used for irradiance correction. The sensor is rigidly mounted, so
+    that heading *is* the camera heading. We take only the yaw from the DLS; the
+    camera's own ``Pitch``/``Roll`` are kept (the DLS pitch/roll describe the
+    light sensor's tilt, not the camera's, and must not be substituted).
+    """
+    try:
+        return float(_scalar(xmp, "IrradianceYaw"))
+    except ValueError:
+        pass
+    m = re.search(r'<DLS:Yaw>([^<]*)<', xmp)
+    if m:
+        return np.degrees(float(m.group(1)))
+    return float(_scalar(xmp, "Yaw"))
+
+
 def utm_epsg(lon: float, lat: float) -> int:
     zone = int((lon + 180) // 6) + 1
     return (32600 if lat >= 0 else 32700) + zone
@@ -100,8 +122,11 @@ def load_model(path: str) -> dict:
     f_mm = float(_scalar(xmp, "PerspectiveFocalLength"))
     ppx, ppy = (float(v) for v in _scalar(xmp, "PrincipalPoint").split(","))
     k1, k2, k3, p1, p2 = _seq(xmp, "PerspectiveDistortion")[:5]
-    yaw, pitch, roll = (np.radians(float(_scalar(xmp, k)))
-                        for k in ("Yaw", "Pitch", "Roll"))
+    # Yaw (heading) comes from the DLS/Irradiance magnetometer, not Camera:Yaw,
+    # which MicaSense often leaves at 0.  Pitch/Roll stay with the camera.  See
+    # _heading_deg.
+    pitch, roll = (np.radians(float(_scalar(xmp, k))) for k in ("Pitch", "Roll"))
+    yaw = np.radians(_heading_deg(xmp))
     try:
         band = _scalar(xmp, "BandName")
     except ValueError:
